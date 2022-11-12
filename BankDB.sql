@@ -13,10 +13,9 @@ GO
 
 CREATE TABLE SocialStatus
 (
-	Id INT IDENTITY(1,1) UNIQUE NOT NULL,
 	StatusName NVARCHAR(30) UNIQUE NOT NULL,
 
-	CONSTRAINT PK_SocialStatus_Id PRIMARY KEY (Id)
+	CONSTRAINT PK_SocialStatus_Id PRIMARY KEY (StatusName)
 )
 
 CREATE TABLE Client
@@ -25,18 +24,10 @@ CREATE TABLE Client
 	FirstName NVARCHAR(30) NOT NULL,
 	LastName  NVARCHAR(30) NOT NULL,
 	FatherName NVARCHAR(30) NOT NULL,
+	SocialStatusName NVARCHAR(30) NOT NULL,
 
-	CONSTRAINT PK_Client_Id PRIMARY KEY (Id)
-)
-CREATE TABLE Client_SocialStatus
-(
-	IdClient INT NOT NULL,
-	IdSocialStatus INT NOT NULL,
-
-	CONSTRAINT FK_Client_SocialStatus_IdClient FOREIGN KEY (IdClient) REFERENCES Client (Id),
-	CONSTRAINT FK_Client_SocialStatus_IdSocialStatus FOREIGN KEY (IdSocialStatus) REFERENCES Socialstatus (Id),
-
-	CONSTRAINT PK_Client_SocialStatus_Ids_Client_SocialStatus PRIMARY KEY (IdClient,IdSocialStatus)
+	CONSTRAINT PK_Client_Id PRIMARY KEY (Id),
+	CONSTRAINT FK_Client_IdSocialStatus FOREIGN KEY (SocialStatusName) REFERENCES Socialstatus (StatusName)
 )
 
 CREATE TABLE Bank
@@ -49,26 +40,27 @@ CREATE TABLE Bank
 
 CREATE TABLE Account
 (
-	Id INT IDENTITY(1,1) UNIQUE NOT NULL,
 	IdClient INT NOT NULL,
 	IdBank INT NOT NULL,
 	Balance MONEY NOT NULL,
 
-	CONSTRAINT PK_Account_Id PRIMARY KEY (Id),
 	CONSTRAINT FK_Account_IdClient FOREIGN KEY (IdClient) REFERENCES Client (Id),
-	CONSTRAINT FK_Account_IdBank FOREIGN KEY (IdBank) REFERENCES Bank (Id)
+	CONSTRAINT FK_Account_IdBank FOREIGN KEY (IdBank) REFERENCES Bank (Id),
+	CONSTRAINT PK_Account_Ids_IdClient_IdBank PRIMARY KEY (IdClient,IdBank)
+
 )
 
 CREATE TABLE BankCard
 (
-	Id INT IDENTITY(1,1) UNIQUE NOT NULL,
-	IdAccount INT NOT NULL,
+    CardNumber VARCHAR(16) NOT NULL CHECK (CardNumber LIKE '[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'),
+	IdClient INT NOT NULL,
+	IdBank INT NOT NULL,
+	ValidThru DATE NOT NULL,
 	Balance MONEY NOT NULL,
 
-	CONSTRAINT PK_BankCard_Id PRIMARY KEY (Id),
-	CONSTRAINT FK_BankCard_IdAccount FOREIGN KEY (IdAccount) REFERENCES Account (Id)
+	CONSTRAINT FK_BankCard_IdClient FOREIGN KEY (IdClient,IdBank) REFERENCES Account (IdClient,IdBank),
+	CONSTRAINT PK_BankCard_Ids_IdClient_IdBank PRIMARY KEY (CardNumber)
 )
-
 CREATE TABLE City
 (
 	Id INT IDENTITY(1,1) UNIQUE NOT NULL,
@@ -90,6 +82,46 @@ CREATE TABLE Subsidiary
 	CONSTRAINT FK_Subsidiary_IdCity FOREIGN KEY (IdCity) REFERENCES City (Id)
 )
 
+GO
+
+CREATE TRIGGER AccountBalanceTrigger
+ON Account
+AFTER INSERT, UPDATE
+AS
+BEGIN
+	IF 
+	(SELECT Balance FROM INSERTED) < (SELECT ISNULL(SUM(ISNULL(BankCard.Balance,0)),0) FROM BankCard
+	INNER JOIN INSERTED ON INSERTED.IdBank = BankCard.IdBank AND INSERTED.IdClient = BankCard.IdClient)
+	BEGIN
+	ROLLBACK TRANSACTION
+	RAISERROR('На аккаунте баланс меньше, чем на всех картах в сумме',0,1)
+	RETURN 
+	END
+END
+
+GO
+
+CREATE TRIGGER BankCardsBalanceTrigger
+ON BankCard
+AFTER INSERT, UPDATE
+AS
+BEGIN
+	IF 
+	(SELECT ISNULL(SUM(ISNULL(INSERTED.Balance,0.0)),0.0) FROM Account
+	INNER JOIN INSERTED ON INSERTED.IdBank = Account.IdBank AND INSERTED.IdClient = Account.IdClient)  > 
+	(SELECT Account.Balance FROM Account
+	INNER JOIN INSERTED ON INSERTED.IdBank = Account.IdBank AND INSERTED.IdClient = Account.IdClient
+	WHERE INSERTED.IdBank = Account.IdBank AND INSERTED.IdClient = Account.IdClient)
+	BEGIN
+	ROLLBACK TRANSACTION
+	RAISERROR('Сумма баланса на картах больше, чем баланс на аккаунте',0,1)
+	RETURN 
+	END
+END
+
+
+GO
+
 INSERT INTO SocialStatus (StatusName)
 VALUES 
 ('Пенсионер'),
@@ -98,18 +130,135 @@ VALUES
 ('Инностранец'),
 ('Ветеран')
 
-INSERT INTO Client (LastName,FirstName,FatherName)
+INSERT INTO Client (LastName,FirstName,FatherName, SocialStatusName)
 VALUES
-('Степаненко','Виктория','Дмитриевна'),
-('Якушенко','Николай','Викторович'),
-('Романовский','Иван','Васильевич'),
-('Григоренко','Елизовета','Николаевна'),
-('Степаненко','Екатерина','Ивановна')
+('Степаненко','Виктория','Дмитриевна','Пенсионер'),
+('Якушенко','Николай','Викторович','Инвалид'),
+('Петрушенко','Василилий','Григорьевич','Студент'),
+('Григоренко','Елизовета','Николаевна','Студент'),
+('Степаненко','Екатерина','Ивановна','Инностранец')
 
-INSERT INTO Client_SocialStatus (IdClient,IdSocialStatus)
+INSERT INTO Bank (BankName)
 VALUES
-(1,1),
-(1,1),
-(1,2),
-(1,3),
-(1,4)
+('Беларусбанк'),
+('Сбербанк'),
+('Альфа банк'),
+('Белинвестбанк'),
+('Белагропромбанк')
+
+INSERT INTO Account (IdClient,IdBank,Balance)VALUES (1,2,100.0)
+INSERT INTO BankCard (CardNumber,IdClient,IdBank,ValidThru,Balance) VALUES('3571379056321684',1,2,'01.05.2024',30.5)
+INSERT INTO Account (IdClient,IdBank,Balance)VALUES (2,4,50.0)
+INSERT INTO BankCard (CardNumber,IdClient,IdBank,ValidThru,Balance) VALUES('2846528656568174',2,4,'01.09.2025',15.0)
+INSERT INTO BankCard (CardNumber,IdClient,IdBank,ValidThru,Balance) VALUES('8158925677275355',2,4,'01.01.2026',35.0)
+INSERT INTO Account (IdClient,IdBank,Balance)VALUES (2,3,50.0)
+INSERT INTO BankCard (CardNumber,IdClient,IdBank,ValidThru,Balance) VALUES('6862866224365636',2,3,'01.06.2023',12.0)
+INSERT INTO Account (IdClient,IdBank,Balance)VALUES (3,1,20.0)
+INSERT INTO Account (IdClient,IdBank,Balance)VALUES (4,5,120.5)
+INSERT INTO Account (IdClient,IdBank,Balance)VALUES (5,1,45.5)
+INSERT INTO BankCard (CardNumber,IdClient,IdBank,ValidThru,Balance) VALUES('9357935382345254',5,1,'01.02.2025',20.0)
+INSERT INTO BankCard (CardNumber,IdClient,IdBank,ValidThru,Balance) VALUES('2776864688675633',5,1,'01.08.2026',25.5)
+
+INSERT INTO City (CityName)
+VALUES
+('Новополоцк'),
+('Минск'),
+('Молодечно'),
+('Брест'),
+('Витебск')
+
+INSERT INTO Subsidiary(IdBank,IdCity,Street,BuildingNumber)
+VALUES
+(1,1,'Молодежная',242),
+(1,1,'Строительная',53),
+(2,3,'Комсомольская',22),
+(3,2,'Пионерская',13),
+(4,5,'Ленина',56),
+(5,4,'Комсомольская',7)
+
+GO
+
+CREATE VIEW [Cписок банков с филиалами в Новополоцке]
+AS SELECT BankName
+FROM Bank
+INNER JOIN Subsidiary ON Bank.Id = Subsidiary.IdBank
+INNER JOIN City ON Subsidiary.IdCity = City.Id
+WHERE CityName LIKE ('Новополоцк')
+GROUP BY BankName
+
+GO
+
+CREATE VIEW [Список карточек]
+AS SELECT C.LastName AS Фамилия,C.FirstName AS Имя,C.FatherName AS Отчество,BC.Balance AS Баланс,B.BankName AS [Название банка]
+FROM BankCard AS BC
+INNER JOIN Account AS A ON A.IdBank = BC.IdBank AND A.IdClient = BC.IdClient
+INNER JOIN Bank AS B ON B.Id = A.IdBank
+INNER JOIN Client AS C ON C.Id = A.IdClient
+
+GO
+
+CREATE VIEW [Список банковских аккаунтов у которых баланс не совпадает с суммой баланса по карточкам]
+AS SELECT C.LastName AS Фамилия,C.FirstName AS Имя,C.FatherName AS Отчество,B.BankName AS [Название банка], Разница
+FROM 
+(
+SELECT BC.IdClient,BC.IdBank,A.Balance - SUM(BC.Balance) AS Разница
+FROM BankCard AS BC
+INNER JOIN Account AS A ON A.IdBank = BC.IdBank AND A.IdClient = BC.IdClient
+INNER JOIN Bank AS B ON B.Id = A.IdBank
+INNER JOIN Client AS C ON C.Id = A.IdClient
+GROUP BY BC.IdClient,BC.IdBank,A.Balance
+HAVING A.Balance - SUM(BC.Balance) <> 0
+) AS T
+INNER JOIN Bank AS B ON B.Id = T.IdBank
+INNER JOIN Client AS C ON C.Id = T.IdClient
+
+GO
+
+CREATE VIEW [Количество банковских карточек для каждого социального статуса (GROUP BY)]
+AS SELECT SS.StatusName AS [Социальный статус], ISNULL(COUNT(BC.CardNumber),0) AS [Количество карт]
+FROM BankCard AS BC
+RIGHT JOIN Account AS A ON A.IdClient = BC.IdClient AND A.IdBank = BC.IdBank
+LEFT JOIN Client AS C ON C.Id = A.IdClient
+RIGHT JOIN SocialStatus AS SS ON SS.StatusName = C.SocialStatusName
+GROUP BY SS.StatusName
+
+
+
+GO
+
+CREATE VIEW [Количество банковских карточек для каждого социального статуса (подзапрос)]
+AS SELECT SS.StatusName AS [Социальный статус], 
+(SELECT COUNT(*)
+FROM BankCard AS BC
+INNER JOIN Account AS A ON A.IdBank = BC.IdBank AND A.IdClient = BC.IdClient
+INNER JOIN Client AS C ON C.Id = A.IdClient
+WHERE SS.StatusName = C.SocialStatusName
+) AS [Количество карт]
+FROM SocialStatus AS SS
+
+GO
+
+CREATE VIEW [Cписок доступных средств для каждого клиента в банке]
+AS SELECT C.Id AS [Id Клиента],C.LastName AS Фамилия,C.FirstName AS Имя,C.FatherName AS Отчество,B.BankName AS [Название банка],AccountBalance AS [Сумма на аккаунте] ,[Доступная сумма]
+FROM 
+(
+SELECT A.IdClient,A.IdBank, SUM(A.Balance) / COUNT(A.IdBank) AS AccountBalance,ISNULL(SUM(ISNULL(BC.Balance,0)),0) AS [Доступная сумма]
+FROM Client AS C
+INNER JOIN Account AS A ON A.IdClient = C.Id
+INNER JOIN Bank AS B ON B.Id = A.IdBank
+LEFT JOIN BankCard AS BC ON BC.IdBank = B.Id AND BC.IdClient = C.Id
+GROUP BY A.IdBank,A.IdClient
+) AS T
+INNER JOIN Account AS A ON A.IdClient = T.IdClient AND A.IdBank = T.IdBank
+INNER JOIN Bank AS B ON B.Id = T.IdBank
+INNER JOIN Client AS C ON C.Id = T.IdClient
+
+GO
+
+CREATE VIEW [Cписок доступных средств для каждого клиента в сумме со всех его банков]
+AS 
+SELECT clientView.[Id Клиента],clientView.Фамилия,clientView.Имя,clientView.Отчество,
+SUM(clientView.[Сумма на аккаунте]) AS [Сумма на аккаунтах],SUM(clientView.[Доступная сумма]) AS [Доступная сумма]
+FROM [Cписок доступных средств для каждого клиента в банке] AS clientView
+GROUP BY clientView.[Id Клиента],clientView.Фамилия,clientView.Имя,clientView.Отчество
+
