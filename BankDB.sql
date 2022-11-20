@@ -1,4 +1,4 @@
-USE master
+п»їUSE master
 GO
 
 IF EXISTS(SELECT * FROM sys.databases WHERE name = 'BankDB')
@@ -82,18 +82,18 @@ CREATE TABLE Subsidiary
 
 GO
 
-CREATE VIEW [Cписок банков с филиалами в Новополоцке]
+CREATE VIEW [CРїРёСЃРѕРє Р±Р°РЅРєРѕРІ СЃ С„РёР»РёР°Р»Р°РјРё РІ РќРѕРІРѕРїРѕР»РѕС†РєРµ]
 AS SELECT BankName
 FROM Bank
 INNER JOIN Subsidiary ON Bank.Id = Subsidiary.IdBank
 INNER JOIN City ON Subsidiary.IdCity = City.Id
-WHERE CityName LIKE ('Новополоцк')
+WHERE CityName LIKE ('РќРѕРІРѕРїРѕР»РѕС†Рє')
 GROUP BY BankName
 
 GO
 
-CREATE VIEW [Список карточек]
-AS SELECT C.LastName AS Фамилия,C.FirstName AS Имя,C.FatherName AS Отчество,BC.Balance AS Баланс,B.BankName AS [Название банка]
+CREATE VIEW [РЎРїРёСЃРѕРє РєР°СЂС‚РѕС‡РµРє]
+AS SELECT C.LastName AS Р¤Р°РјРёР»РёСЏ,C.FirstName AS РРјСЏ,C.FatherName AS РћС‚С‡РµСЃС‚РІРѕ,BC.Balance AS Р‘Р°Р»Р°РЅСЃ,B.BankName AS [РќР°Р·РІР°РЅРёРµ Р±Р°РЅРєР°]
 FROM BankCard AS BC
 INNER JOIN Account AS A ON A.IdBank = BC.IdBank AND A.IdClient = BC.IdClient
 INNER JOIN Bank AS B ON B.Id = A.IdBank
@@ -101,11 +101,11 @@ INNER JOIN Client AS C ON C.Id = A.IdClient
 
 GO
 
-CREATE VIEW [Список банковских аккаунтов у которых баланс не совпадает с суммой баланса по карточкам]
-AS SELECT C.LastName AS Фамилия,C.FirstName AS Имя,C.FatherName AS Отчество,B.BankName AS [Название банка], Разница
+CREATE VIEW [РЎРїРёСЃРѕРє Р±Р°РЅРєРѕРІСЃРєРёС… Р°РєРєР°СѓРЅС‚РѕРІ Сѓ РєРѕС‚РѕСЂС‹С… Р±Р°Р»Р°РЅСЃ РЅРµ СЃРѕРІРїР°РґР°РµС‚ СЃ СЃСѓРјРјРѕР№ Р±Р°Р»Р°РЅСЃР° РїРѕ РєР°СЂС‚РѕС‡РєР°Рј]
+AS SELECT C.LastName AS Р¤Р°РјРёР»РёСЏ,C.FirstName AS РРјСЏ,C.FatherName AS РћС‚С‡РµСЃС‚РІРѕ,B.BankName AS [РќР°Р·РІР°РЅРёРµ Р±Р°РЅРєР°], Р Р°Р·РЅРёС†Р°
 FROM 
 (
-SELECT BC.IdClient,BC.IdBank,A.Balance - SUM(BC.Balance) AS Разница
+SELECT BC.IdClient,BC.IdBank,A.Balance - SUM(BC.Balance) AS Р Р°Р·РЅРёС†Р°
 FROM BankCard AS BC
 INNER JOIN Account AS A ON A.IdBank = BC.IdBank AND A.IdClient = BC.IdClient
 INNER JOIN Bank AS B ON B.Id = A.IdBank
@@ -118,8 +118,8 @@ INNER JOIN Client AS C ON C.Id = T.IdClient
 
 GO
 
-CREATE VIEW [Количество банковских карточек для каждого социального статуса (GROUP BY)]
-AS SELECT SS.StatusName AS [Социальный статус], ISNULL(COUNT(BC.CardNumber),0) AS [Количество карт]
+CREATE VIEW [РљРѕР»РёС‡РµСЃС‚РІРѕ Р±Р°РЅРєРѕРІСЃРєРёС… РєР°СЂС‚РѕС‡РµРє РґР»СЏ РєР°Р¶РґРѕРіРѕ СЃРѕС†РёР°Р»СЊРЅРѕРіРѕ СЃС‚Р°С‚СѓСЃР° (GROUP BY)]
+AS SELECT SS.StatusName AS [РЎРѕС†РёР°Р»СЊРЅС‹Р№ СЃС‚Р°С‚СѓСЃ], ISNULL(COUNT(BC.CardNumber),0) AS [РљРѕР»РёС‡РµСЃС‚РІРѕ РєР°СЂС‚]
 FROM BankCard AS BC
 RIGHT JOIN Account AS A ON A.IdClient = BC.IdClient AND A.IdBank = BC.IdBank
 LEFT JOIN Client AS C ON C.Id = A.IdClient
@@ -130,23 +130,23 @@ GROUP BY SS.StatusName
 
 GO
 
-CREATE VIEW [Количество банковских карточек для каждого социального статуса (подзапрос)]
-AS SELECT SS.Id,SS.StatusName AS [Социальный статус], 
+CREATE VIEW [РљРѕР»РёС‡РµСЃС‚РІРѕ Р±Р°РЅРєРѕРІСЃРєРёС… РєР°СЂС‚РѕС‡РµРє РґР»СЏ РєР°Р¶РґРѕРіРѕ СЃРѕС†РёР°Р»СЊРЅРѕРіРѕ СЃС‚Р°С‚СѓСЃР° (РїРѕРґР·Р°РїСЂРѕСЃ)]
+AS SELECT SS.Id,SS.StatusName AS [РЎРѕС†РёР°Р»СЊРЅС‹Р№ СЃС‚Р°С‚СѓСЃ], 
 (SELECT COUNT(*)
 FROM BankCard AS BC
 INNER JOIN Account AS A ON A.IdBank = BC.IdBank AND A.IdClient = BC.IdClient
 INNER JOIN Client AS C ON C.Id = A.IdClient
 WHERE SS.Id = C.SocialStatusId
-) AS [Количество карт]
+) AS [РљРѕР»РёС‡РµСЃС‚РІРѕ РєР°СЂС‚]
 FROM SocialStatus AS SS
 
 GO
 
-CREATE VIEW [Cписок доступных средств для каждого клиента в банке]
-AS SELECT C.Id AS [Id Клиента],A.IdBank AS [Id Банка],C.LastName AS Фамилия,C.FirstName AS Имя,C.FatherName AS Отчество,B.BankName AS [Название банка],AccountBalance AS [Сумма на аккаунте] ,[Доступная сумма]
+CREATE VIEW [CРїРёСЃРѕРє РґРѕСЃС‚СѓРїРЅС‹С… СЃСЂРµРґСЃС‚РІ РґР»СЏ РєР°Р¶РґРѕРіРѕ РєР»РёРµРЅС‚Р° РІ Р±Р°РЅРєРµ]
+AS SELECT C.Id AS [Id РљР»РёРµРЅС‚Р°],A.IdBank AS [Id Р‘Р°РЅРєР°],C.LastName AS Р¤Р°РјРёР»РёСЏ,C.FirstName AS РРјСЏ,C.FatherName AS РћС‚С‡РµСЃС‚РІРѕ,B.BankName AS [РќР°Р·РІР°РЅРёРµ Р±Р°РЅРєР°],AccountBalance AS [РЎСѓРјРјР° РЅР° Р°РєРєР°СѓРЅС‚Рµ] ,[Р”РѕСЃС‚СѓРїРЅР°СЏ СЃСѓРјРјР°]
 FROM 
 (
-SELECT A.IdClient,A.IdBank, SUM(A.Balance) / COUNT(A.IdBank) AS AccountBalance,ISNULL(SUM(ISNULL(BC.Balance,0)),0) AS [Доступная сумма]
+SELECT A.IdClient,A.IdBank, SUM(A.Balance) / COUNT(A.IdBank) AS AccountBalance,ISNULL(SUM(ISNULL(BC.Balance,0)),0) AS [Р”РѕСЃС‚СѓРїРЅР°СЏ СЃСѓРјРјР°]
 FROM Client AS C
 INNER JOIN Account AS A ON A.IdClient = C.Id
 INNER JOIN Bank AS B ON B.Id = A.IdBank
@@ -159,12 +159,12 @@ INNER JOIN Client AS C ON C.Id = T.IdClient
 
 GO
 
-CREATE VIEW [Cписок доступных средств для каждого клиента в сумме со всех его банков]
+CREATE VIEW [CРїРёСЃРѕРє РґРѕСЃС‚СѓРїРЅС‹С… СЃСЂРµРґСЃС‚РІ РґР»СЏ РєР°Р¶РґРѕРіРѕ РєР»РёРµРЅС‚Р° РІ СЃСѓРјРјРµ СЃРѕ РІСЃРµС… РµРіРѕ Р±Р°РЅРєРѕРІ]
 AS 
-SELECT clientView.[Id Клиента],clientView.Фамилия,clientView.Имя,clientView.Отчество,
-SUM(clientView.[Сумма на аккаунте]) AS [Сумма на аккаунтах],SUM(clientView.[Доступная сумма]) AS [Доступная сумма]
-FROM [Cписок доступных средств для каждого клиента в банке] AS clientView
-GROUP BY clientView.[Id Клиента],clientView.Фамилия,clientView.Имя,clientView.Отчество
+SELECT clientView.[Id РљР»РёРµРЅС‚Р°],clientView.Р¤Р°РјРёР»РёСЏ,clientView.РРјСЏ,clientView.РћС‚С‡РµСЃС‚РІРѕ,
+SUM(clientView.[РЎСѓРјРјР° РЅР° Р°РєРєР°СѓРЅС‚Рµ]) AS [РЎСѓРјРјР° РЅР° Р°РєРєР°СѓРЅС‚Р°С…],SUM(clientView.[Р”РѕСЃС‚СѓРїРЅР°СЏ СЃСѓРјРјР°]) AS [Р”РѕСЃС‚СѓРїРЅР°СЏ СЃСѓРјРјР°]
+FROM [CРїРёСЃРѕРє РґРѕСЃС‚СѓРїРЅС‹С… СЃСЂРµРґСЃС‚РІ РґР»СЏ РєР°Р¶РґРѕРіРѕ РєР»РёРµРЅС‚Р° РІ Р±Р°РЅРєРµ] AS clientView
+GROUP BY clientView.[Id РљР»РёРµРЅС‚Р°],clientView.Р¤Р°РјРёР»РёСЏ,clientView.РРјСЏ,clientView.РћС‚С‡РµСЃС‚РІРѕ
 
 GO
 
@@ -186,7 +186,7 @@ BEGIN
 	) > 0
 	BEGIN
 	ROLLBACK TRANSACTION
-	RAISERROR('На аккаунте баланс меньше, чем на всех картах в сумме',0,1)
+	RAISERROR('РќР° Р°РєРєР°СѓРЅС‚Рµ Р±Р°Р»Р°РЅСЃ РјРµРЅСЊС€Рµ, С‡РµРј РЅР° РІСЃРµС… РєР°СЂС‚Р°С… РІ СЃСѓРјРјРµ',0,1)
 	RETURN 
 	END
 	
@@ -214,7 +214,7 @@ SET nocount ON
 		) > 0
 		BEGIN
 		ROLLBACK TRANSACTION
-		RAISERROR('Сумма баланса на картах больше, чем баланс на аккаунте',0,1)
+		RAISERROR('РЎСѓРјРјР° Р±Р°Р»Р°РЅСЃР° РЅР° РєР°СЂС‚Р°С… Р±РѕР»СЊС€Рµ, С‡РµРј Р±Р°Р»Р°РЅСЃ РЅР° Р°РєРєР°СѓРЅС‚Рµ',0,1)
 		RETURN 
 		END
 
@@ -232,19 +232,19 @@ SET XACT_ABORT, NOCOUNT ON
 
 IF @StatusId NOT IN(SELECT Id FROM SocialStatus) 
 BEGIN
-RAISERROR('Поле @StatusId не содержится в таблице SocialStatus',1,1)
+RAISERROR('РџРѕР»Рµ @StatusId РЅРµ СЃРѕРґРµСЂР¶РёС‚СЃСЏ РІ С‚Р°Р±Р»РёС†Рµ SocialStatus',1,1)
 RETURN
 END
 IF @Money <= 0
 BEGIN
-RAISERROR('Поле @Money меньше либо равно 0',0,1)
+RAISERROR('РџРѕР»Рµ @Money РјРµРЅСЊС€Рµ Р»РёР±Рѕ СЂР°РІРЅРѕ 0',0,1)
 RETURN
 END
 IF (SELECT COUNT(*) FROM Account
 INNER JOIN Client ON Client.Id = Account.IdClient
 WHERE Client.SocialStatusId = @StatusId) = 0
 BEGIN
-RAISERROR('У поля @StatusId нет привязанный аккаунтов',0,1)
+RAISERROR('РЈ РїРѕР»СЏ @StatusId РЅРµС‚ РїСЂРёРІСЏР·Р°РЅРЅС‹Р№ Р°РєРєР°СѓРЅС‚РѕРІ',0,1)
 RETURN
 END
 
@@ -269,28 +269,28 @@ SET XACT_ABORT, NOCOUNT ON
 
 IF @Money <= 0
 BEGIN
-RAISERROR('Поле @Money меньше либо равно 0',0,1)
+RAISERROR('РџРѕР»Рµ @Money РјРµРЅСЊС€Рµ Р»РёР±Рѕ СЂР°РІРЅРѕ 0',0,1)
 RETURN
 END
 IF @ClientId NOT IN(SELECT Id FROM Client) 
 BEGIN
-RAISERROR('Поле @StatusId не содержится в таблице Client',0,1)
+RAISERROR('РџРѕР»Рµ @StatusId РЅРµ СЃРѕРґРµСЂР¶РёС‚СЃСЏ РІ С‚Р°Р±Р»РёС†Рµ Client',0,1)
 RETURN
 END
 IF @BankId NOT IN(SELECT Id FROM Bank) 
 BEGIN
-RAISERROR('Поле @BankId не содержится в таблице Bank',0,1)
+RAISERROR('РџРѕР»Рµ @BankId РЅРµ СЃРѕРґРµСЂР¶РёС‚СЃСЏ РІ С‚Р°Р±Р»РёС†Рµ Bank',0,1)
 RETURN
 END
 IF (SELECT COUNT(*) FROM Account
 	WHERE Account.IdBank = @BankId AND Account.IdClient = @ClientId) = 0
 BEGIN
-RAISERROR('Поля @BankId и @StatusId не содержатся в таблице Account',0,1)
+RAISERROR('РџРѕР»СЏ @BankId Рё @StatusId РЅРµ СЃРѕРґРµСЂР¶Р°С‚СЃСЏ РІ С‚Р°Р±Р»РёС†Рµ Account',0,1)
 RETURN
 END
 IF @CardNumber NOT IN(SELECT CardNumber FROM BankCard) 
 BEGIN
-RAISERROR('Поле @CardNumber не содержится в таблице BankCard',0,1)
+RAISERROR('РџРѕР»Рµ @CardNumber РЅРµ СЃРѕРґРµСЂР¶РёС‚СЃСЏ РІ С‚Р°Р±Р»РёС†Рµ BankCard',0,1)
 RETURN
 END
 
@@ -298,19 +298,19 @@ IF (SELECT COUNT(*) FROM Account AS A
 	INNER JOIN BankCard AS BC ON BC.IdBank = A.IdBank AND BC.IdClient = A.IdClient
 	WHERE BC.IdClient = @ClientId AND BC.IdBank = @BankId AND BC.CardNumber = @CardNumber) <> 1
 BEGIN
-RAISERROR('Поле @CardNumber не содержится на аккаунте с полями @BankId и @ClientId',0,1)
+RAISERROR('РџРѕР»Рµ @CardNumber РЅРµ СЃРѕРґРµСЂР¶РёС‚СЃСЏ РЅР° Р°РєРєР°СѓРЅС‚Рµ СЃ РїРѕР»СЏРјРё @BankId Рё @ClientId',0,1)
 RETURN
 END
 
 DECLARE @MoneyCanTransfer MONEY
 
-SELECT @MoneyCanTransfer = List.[Сумма на аккаунте] - List.[Доступная сумма]
-FROM [Cписок доступных средств для каждого клиента в банке] AS List
-WHERE List.[Id Клиента] = @ClientId AND List.[Id Банка] = @BankId
+SELECT @MoneyCanTransfer = List.[РЎСѓРјРјР° РЅР° Р°РєРєР°СѓРЅС‚Рµ] - List.[Р”РѕСЃС‚СѓРїРЅР°СЏ СЃСѓРјРјР°]
+FROM [CРїРёСЃРѕРє РґРѕСЃС‚СѓРїРЅС‹С… СЃСЂРµРґСЃС‚РІ РґР»СЏ РєР°Р¶РґРѕРіРѕ РєР»РёРµРЅС‚Р° РІ Р±Р°РЅРєРµ] AS List
+WHERE List.[Id РљР»РёРµРЅС‚Р°] = @ClientId AND List.[Id Р‘Р°РЅРєР°] = @BankId
 
 IF @MoneyCanTransfer < @Money
 BEGIN
-RAISERROR('Поле @Money больше возможной пересылки средств',0,1)
+RAISERROR('РџРѕР»Рµ @Money Р±РѕР»СЊС€Рµ РІРѕР·РјРѕР¶РЅРѕР№ РїРµСЂРµСЃС‹Р»РєРё СЃСЂРµРґСЃС‚РІ',0,1)
 RETURN
 END
 
@@ -333,27 +333,27 @@ GO
 
 INSERT INTO SocialStatus (StatusName)
 VALUES 
-('Пенсионер'),
-('Инвалид'),
-('Студент'),
-('Инностранец'),
-('Ветеран')
+('РџРµРЅСЃРёРѕРЅРµСЂ'),
+('РРЅРІР°Р»РёРґ'),
+('РЎС‚СѓРґРµРЅС‚'),
+('РРЅРЅРѕСЃС‚СЂР°РЅРµС†'),
+('Р’РµС‚РµСЂР°РЅ')
 
 INSERT INTO Client (LastName,FirstName,FatherName, SocialStatusId)
 VALUES
-('Степаненко','Виктория','Дмитриевна',1),
-('Якушенко','Николай','Викторович',2),
-('Петрушенко','Василилий','Григорьевич',3),
-('Григоренко','Елизовета','Николаевна',3),
-('Степаненко','Екатерина','Ивановна',4)
+('РЎС‚РµРїР°РЅРµРЅРєРѕ','Р’РёРєС‚РѕСЂРёСЏ','Р”РјРёС‚СЂРёРµРІРЅР°',1),
+('РЇРєСѓС€РµРЅРєРѕ','РќРёРєРѕР»Р°Р№','Р’РёРєС‚РѕСЂРѕРІРёС‡',2),
+('РџРµС‚СЂСѓС€РµРЅРєРѕ','Р’Р°СЃРёР»РёР»РёР№','Р“СЂРёРіРѕСЂСЊРµРІРёС‡',3),
+('Р“СЂРёРіРѕСЂРµРЅРєРѕ','Р•Р»РёР·РѕРІРµС‚Р°','РќРёРєРѕР»Р°РµРІРЅР°',3),
+('РЎС‚РµРїР°РЅРµРЅРєРѕ','Р•РєР°С‚РµСЂРёРЅР°','РРІР°РЅРѕРІРЅР°',4)
 
 INSERT INTO Bank (BankName)
 VALUES
-('Беларусбанк'),
-('Сбербанк'),
-('Альфа банк'),
-('Белинвестбанк'),
-('Белагропромбанк')
+('Р‘РµР»Р°СЂСѓСЃР±Р°РЅРє'),
+('РЎР±РµСЂР±Р°РЅРє'),
+('РђР»СЊС„Р° Р±Р°РЅРє'),
+('Р‘РµР»РёРЅРІРµСЃС‚Р±Р°РЅРє'),
+('Р‘РµР»Р°РіСЂРѕРїСЂРѕРјР±Р°РЅРє')
 
 INSERT INTO Account (IdClient,IdBank,Balance)VALUES (1,2,100.0)
 INSERT INTO BankCard (CardNumber,IdClient,IdBank,ValidThru,Balance) VALUES('3571379056321684',1,2,'01.05.2024',30.5)
@@ -370,20 +370,20 @@ INSERT INTO BankCard (CardNumber,IdClient,IdBank,ValidThru,Balance) VALUES('2776
 
 INSERT INTO City (CityName)
 VALUES
-('Новополоцк'),
-('Минск'),
-('Молодечно'),
-('Брест'),
-('Витебск')
+('РќРѕРІРѕРїРѕР»РѕС†Рє'),
+('РњРёРЅСЃРє'),
+('РњРѕР»РѕРґРµС‡РЅРѕ'),
+('Р‘СЂРµСЃС‚'),
+('Р’РёС‚РµР±СЃРє')
 
 INSERT INTO Subsidiary(IdBank,IdCity,Street,BuildingNumber)
 VALUES
-(1,1,'Молодежная',242),
-(1,1,'Строительная',53),
-(2,3,'Комсомольская',22),
-(3,2,'Пионерская',13),
-(4,5,'Ленина',56),
-(5,4,'Комсомольская',7)
+(1,1,'РњРѕР»РѕРґРµР¶РЅР°СЏ',242),
+(1,1,'РЎС‚СЂРѕРёС‚РµР»СЊРЅР°СЏ',53),
+(2,3,'РљРѕРјСЃРѕРјРѕР»СЊСЃРєР°СЏ',22),
+(3,2,'РџРёРѕРЅРµСЂСЃРєР°СЏ',13),
+(4,5,'Р›РµРЅРёРЅР°',56),
+(5,4,'РљРѕРјСЃРѕРјРѕР»СЊСЃРєР°СЏ',7)
 
 GO
 
