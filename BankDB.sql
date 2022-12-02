@@ -12,14 +12,14 @@ USE BankDB
 
 GO
 
-CREATE TABLE SocialStatus
+CREATE TABLE SocialStatuses
 (
 	Id INT IDENTITY(1,1) UNIQUE NOT NULL,
 	StatusName NVARCHAR(30) UNIQUE NOT NULL,
 
-	CONSTRAINT PK_SocialStatus_Id PRIMARY KEY (Id)
+	CONSTRAINT PK_SocialStatuses_Id PRIMARY KEY (Id)
 )
-CREATE TABLE Client
+CREATE TABLE Clients
 (
 	Id INT IDENTITY(1,1) UNIQUE NOT NULL,
 	FirstName NVARCHAR(30) NOT NULL,
@@ -27,149 +27,75 @@ CREATE TABLE Client
 	FatherName NVARCHAR(30) NOT NULL,
 	SocialStatusId INT NOT NULL,
 
-	CONSTRAINT PK_Client_Id PRIMARY KEY (Id),
-	CONSTRAINT FK_Client_IdSocialStatus FOREIGN KEY (SocialStatusId) REFERENCES SocialStatus (Id)
+	CONSTRAINT PK_Clients_Id PRIMARY KEY (Id),
+	CONSTRAINT FK_Clients_SocialStatusId FOREIGN KEY (SocialStatusId) REFERENCES SocialStatuses (Id)
 )
-CREATE TABLE Bank
+CREATE TABLE Banks
 (
 	Id INT IDENTITY(1,1) UNIQUE NOT NULL,
 	BankName NVARCHAR(30) UNIQUE NOT NULL,
 
-	CONSTRAINT PK_Bank_Id PRIMARY KEY (Id)
+	CONSTRAINT PK_Banks_Id PRIMARY KEY (Id)
 )
-CREATE TABLE Account
+CREATE TABLE Accounts
 (
-	IdClient INT NOT NULL,
-	IdBank INT NOT NULL,
+	Id INT IDENTITY(1,1) UNIQUE NOT NULL,
+	ClientId INT NOT NULL,
+	BankId INT NOT NULL,
 	Balance MONEY NOT NULL,
 
-	CONSTRAINT FK_Account_IdClient FOREIGN KEY (IdClient) REFERENCES Client (Id),
-	CONSTRAINT FK_Account_IdBank FOREIGN KEY (IdBank) REFERENCES Bank (Id),
-	CONSTRAINT PK_Account_Ids_IdClient_IdBank PRIMARY KEY (IdClient,IdBank)
-
+	CONSTRAINT FK_Accounts_ClientId FOREIGN KEY (ClientId) REFERENCES Clients (Id),
+	CONSTRAINT FK_Accounts_BankId FOREIGN KEY (BankId) REFERENCES Banks (Id),
+	CONSTRAINT PK_Accounts_Id PRIMARY KEY (Id),
+	CONSTRAINT Accounts_ClientId_BankId_Unique UNIQUE (ClientId ,BankId)
 )
-CREATE TABLE BankCard
+CREATE TABLE BankCards
 (
-    CardNumber VARCHAR(16) NOT NULL CHECK (CardNumber LIKE '[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'),
-	IdClient INT NOT NULL,
-	IdBank INT NOT NULL,
+	Id INT IDENTITY(1,1) UNIQUE NOT NULL,
+    CardNumber CHAR(16) NOT NULL,
+	AccountId INT NOT NULL,
 	ValidThru DATE NOT NULL,
 	Balance MONEY NOT NULL,
 
-	CONSTRAINT FK_BankCard_IdClient FOREIGN KEY (IdClient,IdBank) REFERENCES Account (IdClient,IdBank),
-	CONSTRAINT PK_BankCard_Ids_IdClient_IdBank PRIMARY KEY (CardNumber)
+	CONSTRAINT CardNumber_NumbersCheck CHECK (CardNumber NOT LIKE '%[^0-9]%'),
+	CONSTRAINT FK_BankCards_AccountId FOREIGN KEY (AccountId) REFERENCES Accounts (Id),
+	CONSTRAINT PK_BankCards_Id PRIMARY KEY (Id)
+	
 )
-CREATE TABLE City
+CREATE TABLE Cities
 (
 	Id INT IDENTITY(1,1) UNIQUE NOT NULL,
 	CityName NVARCHAR(30) UNIQUE NOT NULL,
 
-	CONSTRAINT PK_City_Id PRIMARY KEY (Id)
+	CONSTRAINT PK_Cities_Id PRIMARY KEY (Id)
 )
-CREATE TABLE Subsidiary
+CREATE TABLE Subsidiaries
 (
 	Id INT IDENTITY(1,1) UNIQUE NOT NULL,
-	IdBank INT NOT NULL,
-	IdCity INT NOT NULL,
+	BankId INT NOT NULL,
+	CityId INT NOT NULL,
 	Street NVARCHAR(30) NOT NULL,
 	BuildingNumber INT NOT NULL,
 
-	CONSTRAINT PK_Subsidiary_Id PRIMARY KEY (Id),
-	CONSTRAINT FK_Subsidiary_IdBank FOREIGN KEY (IdBank) REFERENCES Bank (Id),
-	CONSTRAINT FK_Subsidiary_IdCity FOREIGN KEY (IdCity) REFERENCES City (Id)
+	CONSTRAINT PK_Subsidiaries_Id PRIMARY KEY (Id),
+	CONSTRAINT FK_Subsidiaries_BankId FOREIGN KEY (BankId) REFERENCES Banks (Id),
+	CONSTRAINT FK_Subsidiaries_CityId FOREIGN KEY (CityId) REFERENCES Cities (Id)
 )
 
 
 GO
 
-CREATE VIEW [Cписок банков с филиалами в Новополоцке]
-AS SELECT BankName
-FROM Bank
-INNER JOIN Subsidiary ON Bank.Id = Subsidiary.IdBank
-INNER JOIN City ON Subsidiary.IdCity = City.Id
-WHERE CityName LIKE ('Новополоцк')
-GROUP BY BankName
+--------------------------------------------------------- Задание 9
+/*
+Написать триггер на таблицы Account/Cards чтобы нельзя была занести значения в поле баланс
+если это противоречит условиям  (то есть нельзя изменить значение в Account на меньшее, чем
+сумма балансов по всем карточкам. И соответственно нельзя изменить баланс карты если в итоге
+сумма на картах будет больше чем баланс аккаунта)
+*/
 
-GO
-
-CREATE VIEW [Список карточек]
-AS SELECT C.LastName AS Фамилия,C.FirstName AS Имя,C.FatherName AS Отчество,BC.Balance AS Баланс,B.BankName AS [Название банка]
-FROM BankCard AS BC
-INNER JOIN Account AS A ON A.IdBank = BC.IdBank AND A.IdClient = BC.IdClient
-INNER JOIN Bank AS B ON B.Id = A.IdBank
-INNER JOIN Client AS C ON C.Id = A.IdClient
-
-GO
-
-CREATE VIEW [Список банковских аккаунтов у которых баланс не совпадает с суммой баланса по карточкам]
-AS SELECT C.LastName AS Фамилия,C.FirstName AS Имя,C.FatherName AS Отчество,B.BankName AS [Название банка], Разница
-FROM 
-(
-SELECT BC.IdClient,BC.IdBank,A.Balance - SUM(BC.Balance) AS Разница
-FROM BankCard AS BC
-INNER JOIN Account AS A ON A.IdBank = BC.IdBank AND A.IdClient = BC.IdClient
-INNER JOIN Bank AS B ON B.Id = A.IdBank
-INNER JOIN Client AS C ON C.Id = A.IdClient
-GROUP BY BC.IdClient,BC.IdBank,A.Balance
-HAVING A.Balance - SUM(BC.Balance) <> 0
-) AS T
-INNER JOIN Bank AS B ON B.Id = T.IdBank
-INNER JOIN Client AS C ON C.Id = T.IdClient
-
-GO
-
-CREATE VIEW [Количество банковских карточек для каждого социального статуса (GROUP BY)]
-AS SELECT SS.StatusName AS [Социальный статус], ISNULL(COUNT(BC.CardNumber),0) AS [Количество карт]
-FROM BankCard AS BC
-RIGHT JOIN Account AS A ON A.IdClient = BC.IdClient AND A.IdBank = BC.IdBank
-LEFT JOIN Client AS C ON C.Id = A.IdClient
-RIGHT JOIN SocialStatus AS SS ON SS.Id = C.SocialStatusId
-GROUP BY SS.StatusName
-
-
-
-GO
-
-CREATE VIEW [Количество банковских карточек для каждого социального статуса (подзапрос)]
-AS SELECT SS.Id,SS.StatusName AS [Социальный статус], 
-(SELECT COUNT(*)
-FROM BankCard AS BC
-INNER JOIN Account AS A ON A.IdBank = BC.IdBank AND A.IdClient = BC.IdClient
-INNER JOIN Client AS C ON C.Id = A.IdClient
-WHERE SS.Id = C.SocialStatusId
-) AS [Количество карт]
-FROM SocialStatus AS SS
-
-GO
-
-CREATE VIEW [Cписок доступных средств для каждого клиента в банке]
-AS SELECT C.Id AS [Id Клиента],A.IdBank AS [Id Банка],C.LastName AS Фамилия,C.FirstName AS Имя,C.FatherName AS Отчество,B.BankName AS [Название банка],AccountBalance AS [Сумма на аккаунте] ,[Доступная сумма]
-FROM 
-(
-SELECT A.IdClient,A.IdBank, SUM(A.Balance) / COUNT(A.IdBank) AS AccountBalance,ISNULL(SUM(ISNULL(BC.Balance,0)),0) AS [Доступная сумма]
-FROM Client AS C
-INNER JOIN Account AS A ON A.IdClient = C.Id
-INNER JOIN Bank AS B ON B.Id = A.IdBank
-LEFT JOIN BankCard AS BC ON BC.IdBank = B.Id AND BC.IdClient = C.Id
-GROUP BY A.IdBank,A.IdClient
-) AS T
-INNER JOIN Account AS A ON A.IdClient = T.IdClient AND A.IdBank = T.IdBank
-INNER JOIN Bank AS B ON B.Id = T.IdBank
-INNER JOIN Client AS C ON C.Id = T.IdClient
-
-GO
-
-CREATE VIEW [Cписок доступных средств для каждого клиента в сумме со всех его банков]
-AS 
-SELECT clientView.[Id Клиента],clientView.Фамилия,clientView.Имя,clientView.Отчество,
-SUM(clientView.[Сумма на аккаунте]) AS [Сумма на аккаунтах],SUM(clientView.[Доступная сумма]) AS [Доступная сумма]
-FROM [Cписок доступных средств для каждого клиента в банке] AS clientView
-GROUP BY clientView.[Id Клиента],clientView.Фамилия,clientView.Имя,clientView.Отчество
-
-GO
 
 CREATE TRIGGER AccountBalanceTrigger
-ON Account
+ON Accounts
 AFTER INSERT, UPDATE
 AS
 BEGIN
@@ -177,11 +103,11 @@ BEGIN
 	IF 
 	(SELECT COUNT(*) 
 	 FROM 
-	 	 (SELECT ISNULL(SUM(ISNULL(INSERTED.Balance,0.0)),0.0) AS Sums FROM Account
-		 INNER JOIN INSERTED ON INSERTED.IdBank = Account.IdBank AND INSERTED.IdClient = Account.IdClient) AS T1,
-		 (SELECT Account.Balance FROM Account
-		 INNER JOIN INSERTED ON INSERTED.IdBank = Account.IdBank AND INSERTED.IdClient = Account.IdClient
-		 WHERE INSERTED.IdBank = Account.IdBank AND INSERTED.IdClient = Account.IdClient) AS T2
+	 	 (SELECT ISNULL(SUM(ISNULL(INSERTED.Balance,0.0)),0.0) AS Sums FROM Accounts
+		 INNER JOIN INSERTED ON INSERTED.Id = Accounts.Id) AS T1,
+		 (SELECT Accounts.Balance FROM Accounts
+		 INNER JOIN INSERTED ON INSERTED.Id = Accounts.Id
+		 WHERE INSERTED.Id = Accounts.Id) AS T2
 		 WHERE T1.Sums < T2.Balance
 	) > 0
 	BEGIN
@@ -196,7 +122,7 @@ END
 GO
 
 CREATE TRIGGER BankCardsBalanceTrigger
-ON BankCard
+ON BankCards
 AFTER INSERT, UPDATE
 AS
 BEGIN
@@ -205,11 +131,11 @@ SET nocount ON
 		IF  
 		(SELECT COUNT(*) 
 		 FROM 
-		 (SELECT ISNULL(SUM(ISNULL(INSERTED.Balance,0.0)),0.0) AS Sums FROM Account
-		 INNER JOIN INSERTED ON INSERTED.IdBank = Account.IdBank AND INSERTED.IdClient = Account.IdClient) AS T1,
-		 (SELECT Account.Balance FROM Account
-		 INNER JOIN INSERTED ON INSERTED.IdBank = Account.IdBank AND INSERTED.IdClient = Account.IdClient
-		 WHERE INSERTED.IdBank = Account.IdBank AND INSERTED.IdClient = Account.IdClient) AS T2
+		 (SELECT ISNULL(SUM(ISNULL(INSERTED.Balance,0.0)),0.0) AS Sums FROM Accounts
+		 INNER JOIN INSERTED ON INSERTED.AccountId = Accounts.Id) AS T1,
+		 (SELECT Accounts.Balance FROM Accounts
+		 INNER JOIN INSERTED ON INSERTED.AccountId = Accounts.Id
+		 WHERE INSERTED.AccountId = Accounts.Id) AS T2
 		 WHERE T1.Sums > T2.Balance 
 		) > 0
 		BEGIN
@@ -223,44 +149,256 @@ END
 
 GO
 
+---------------------------------------------------------
+--------------------------------------------------------- Задание 1
+/*
+Прочитать условия запросов и создать структуру базы.
+Заполнить базу значениями.
+В каждой таблице-словаре минимум по 5 значений.
+*/
+
+INSERT INTO SocialStatuses (StatusName)
+VALUES 
+('Пенсионер'),
+('Инвалид'),
+('Студент'),
+('Инностранец'),
+('Ветеран')
+
+INSERT INTO Clients (LastName,FirstName,FatherName, SocialStatusId)
+VALUES
+('Степаненко','Виктория','Дмитриевна',1),
+('Якушенко','Николай','Викторович',2),
+('Петрушенко','Василилий','Григорьевич',3),
+('Григоренко','Елизовета','Николаевна',3),
+('Степаненко','Екатерина','Ивановна',4)
+
+INSERT INTO Banks (BankName)
+VALUES
+('Беларусбанк'),
+('Сбербанк'),
+('Альфа банк'),
+('Белинвестбанк'),
+('Белагропромбанк')
+
+INSERT INTO Accounts (ClientId,BankId,Balance)VALUES (1,2,100.0)
+INSERT INTO BankCards (CardNumber,AccountId,ValidThru,Balance) VALUES('3571379056321684',1,'01.05.2024',30.5)
+INSERT INTO Accounts (ClientId,BankId,Balance)VALUES (2,4,50.0)
+INSERT INTO BankCards (CardNumber,AccountId,ValidThru,Balance) VALUES('2846528656568174',2,'01.09.2025',15.0)
+INSERT INTO BankCards (CardNumber,AccountId,ValidThru,Balance) VALUES('8158925677275355',2,'01.01.2026',35.0)
+INSERT INTO Accounts (ClientId,BankId,Balance)VALUES (2,3,50.0)
+INSERT INTO BankCards (CardNumber,AccountId,ValidThru,Balance) VALUES('6862866224365636',3,'01.06.2023',12.0)
+INSERT INTO Accounts (ClientId,BankId,Balance)VALUES (3,1,20.0)
+INSERT INTO Accounts (ClientId,BankId,Balance)VALUES (4,5,120.5)
+INSERT INTO Accounts (ClientId,BankId,Balance)VALUES (5,1,45.5)
+INSERT INTO BankCards (CardNumber,AccountId,ValidThru,Balance) VALUES('9357935382345254',6,'01.02.2025',20.0)
+INSERT INTO BankCards (CardNumber,AccountId,ValidThru,Balance) VALUES('2776864688675633',6,'01.08.2026',25.5)
+
+INSERT INTO Cities(CityName)
+VALUES
+('Новополоцк'),
+('Минск'),
+('Молодечно'),
+('Брест'),
+('Витебск')
+
+INSERT INTO Subsidiaries(BankId,CityId,Street,BuildingNumber)
+VALUES
+(1,1,'Молодежная',242),
+(1,1,'Строительная',53),
+(2,3,'Комсомольская',22),
+(3,2,'Пионерская',13),
+(4,5,'Ленина',56),
+(5,4,'Комсомольская',7)
+
+
+---------------------------------------------------------
+--------------------------------------------------------- Задание 2
+/*
+Покажи мне список банков у которых есть филиалы в городе X (выбери один из городов)
+*/
+GO
+CREATE VIEW [Cписок банков с филиалами в Новополоцке]
+AS SELECT BankName, Subsidiaries.Street, Subsidiaries.BuildingNumber
+FROM Banks
+INNER JOIN Subsidiaries ON Banks.Id = Subsidiaries.BankId
+INNER JOIN Cities ON Subsidiaries.CityId = Cities.Id
+WHERE CityName LIKE ('Новополоцк')
+GO
+
+SELECT * FROM [Cписок банков с филиалами в Новополоцке]
+
+---------------------------------------------------------
+--------------------------------------------------------- Задание 3
+/*
+Получить список карточек с указанием имени владельца, баланса и названия банка
+*/
+GO
+CREATE VIEW [Список карточек]
+AS SELECT C.LastName AS Фамилия,C.FirstName AS Имя,C.FatherName AS Отчество,BC.Balance AS Баланс,B.BankName AS [Название банка]
+FROM BankCards AS BC
+INNER JOIN Accounts AS A ON A.Id = BC.AccountId
+INNER JOIN Banks AS B ON B.Id = A.BankId
+INNER JOIN Clients AS C ON C.Id = A.ClientId
+GO
+
+SELECT * FROM [Список карточек]
+
+---------------------------------------------------------
+--------------------------------------------------------- Задание 4
+/*
+Показать список банковских аккаунтов у которых баланс не совпадает с суммой баланса по
+карточкам. В отдельной колонке вывести разницу
+*/
+
+GO
+CREATE VIEW [Список банковских аккаунтов у которых баланс не совпадает с суммой баланса по карточкам]
+AS SELECT C.LastName AS Фамилия,C.FirstName AS Имя,C.FatherName AS Отчество,B.BankName AS [Название банка], Разница
+FROM 
+(
+SELECT A.ClientId,A.BankId,A.Balance - SUM(BC.Balance) AS Разница
+FROM BankCards AS BC
+INNER JOIN Accounts AS A ON A.Id = BC.AccountId
+INNER JOIN Banks AS B ON B.Id = A.BankId
+INNER JOIN Clients AS C ON C.Id = A.ClientId
+GROUP BY A.ClientId,A.BankId,A.Balance
+HAVING A.Balance - SUM(BC.Balance) <> 0
+) AS T
+INNER JOIN Banks AS B ON B.Id = T.BankId
+INNER JOIN Clients AS C ON C.Id = T.ClientId
+GO
+
+SELECT * FROM [Список банковских аккаунтов у которых баланс не совпадает с суммой баланса по карточкам]
+
+---------------------------------------------------------
+--------------------------------------------------------- Задание 5
+/*
+Вывести кол-во банковских карточек для каждого соц статуса (2 реализации, GROUP BY и
+подзапросом)
+*/
+GO
+CREATE VIEW [Количество банковских карточек для каждого социального статуса (GROUP BY)]
+AS SELECT SS.StatusName AS [Социальный статус], ISNULL(COUNT(BC.CardNumber),0) AS [Количество карт]
+FROM BankCards AS BC
+RIGHT JOIN Accounts AS A ON A.Id = BC.AccountId
+LEFT JOIN Clients AS C ON C.Id = A.ClientId
+RIGHT JOIN SocialStatuses AS SS ON SS.Id = C.SocialStatusId
+GROUP BY SS.StatusName
+GO
+CREATE VIEW [Количество банковских карточек для каждого социального статуса (подзапрос)]
+AS SELECT SS.Id,SS.StatusName AS [Социальный статус], 
+(SELECT COUNT(*)
+FROM BankCards AS BC
+INNER JOIN Accounts AS A ON A.Id = BC.AccountId
+INNER JOIN Clients AS C ON C.Id = A.ClientId
+WHERE SS.Id = C.SocialStatusId
+) AS [Количество карт]
+FROM SocialStatuses AS SS
+
+GO
+
+SELECT * FROM [Количество банковских карточек для каждого социального статуса (GROUP BY)]
+SELECT * FROM [Количество банковских карточек для каждого социального статуса (подзапрос)]
+
+---------------------------------------------------------
+--------------------------------------------------------- Задание 6
+/*
+Написать stored procedure которая будет добавлять по 10$ на каждый банковский аккаунт для
+определенного соц статуса (У каждого клиента бывают разные соц. статусы. Например, пенсионер,
+инвалид и прочее). Входной параметр процедуры - Id социального статуса. Обработать
+исключительные ситуации (например, был введен неверные номер соц. статуса. Либо когда у этого
+статуса нет привязанных аккаунтов).
+*/
+GO
 CREATE PROCEDURE GiveMoneyBySocialStatus
-	@StatusId INT,
-	@Money MONEY
+	@StatusId INT
 AS 
 BEGIN
 SET XACT_ABORT, NOCOUNT ON
 
-IF @StatusId NOT IN(SELECT Id FROM SocialStatus) 
+IF @StatusId NOT IN(SELECT Id FROM SocialStatuses) 
 BEGIN
-RAISERROR('Поле @StatusId не содержится в таблице SocialStatus',1,1)
+RAISERROR('Поле @StatusId не содержится в таблице SocialStatuses',1,1)
 RETURN
 END
-IF @Money <= 0
-BEGIN
-RAISERROR('Поле @Money меньше либо равно 0',0,1)
-RETURN
-END
-IF (SELECT COUNT(*) FROM Account
-INNER JOIN Client ON Client.Id = Account.IdClient
-WHERE Client.SocialStatusId = @StatusId) = 0
+IF (SELECT COUNT(*) FROM Accounts
+INNER JOIN Clients ON Clients.Id = Accounts.ClientId
+WHERE Clients.SocialStatusId = @StatusId) = 0
 BEGIN
 RAISERROR('У поля @StatusId нет привязанный аккаунтов',0,1)
 RETURN
 END
 
-UPDATE Account
-SET Balance = Balance + @Money
-FROM Account AS A
-INNER JOIN Client AS C ON C.Id = A.IdClient
-INNER JOIN SocialStatus AS SS ON SS.Id = C.SocialStatusId
+UPDATE Accounts
+SET Balance = Balance + 10
+FROM Accounts AS A
+INNER JOIN Clients AS C ON C.Id = A.ClientId
+INNER JOIN SocialStatuses AS SS ON SS.Id = C.SocialStatusId
 WHERE SS.Id = @StatusId
 END
+GO
+
+SELECT * FROM Accounts
+EXEC GiveMoneyBySocialStatus 3
+SELECT * FROM Accounts
+
+
+SELECT * FROM Accounts
+EXEC GiveMoneyBySocialStatus 999999
+SELECT * FROM Accounts
+EXEC GiveMoneyBySocialStatus 5
+SELECT * FROM Accounts
+
+---------------------------------------------------------
+--------------------------------------------------------- Задание 7
+/*
+Получить список доступных средств для каждого клиента. То есть если у клиента на банковском
+аккаунте 60 рублей, и у него 2 карточки по 15 рублей на каждой, то у него доступно 30 рублей для
+перевода на любую из карт
+*/
+GO
+CREATE VIEW [Cписок доступных средств для каждого клиента в банке]
+AS SELECT A.Id AS [Id Аккаунта],C.LastName AS Фамилия,C.FirstName AS Имя,C.FatherName AS Отчество,B.BankName AS [Название банка],AccountBalance AS [Сумма на аккаунте] ,[Доступная сумма]
+FROM 
+(
+SELECT A.ClientId,A.BankId, SUM(A.Balance) / COUNT(A.BankId) AS AccountBalance,ISNULL(SUM(ISNULL(BC.Balance,0)),0) AS [Доступная сумма]
+FROM Clients AS C
+INNER JOIN Accounts AS A ON A.ClientId = C.Id
+INNER JOIN Banks AS B ON B.Id = A.BankId
+LEFT JOIN BankCards AS BC ON A.Id = BC.AccountId
+GROUP BY A.BankId,A.ClientId
+) AS T
+INNER JOIN Accounts AS A ON A.ClientId = T.ClientId AND A.BankId = T.BankId
+INNER JOIN Banks AS B ON B.Id = T.BankId
+INNER JOIN Clients AS C ON C.Id = T.ClientId
+GO
+CREATE VIEW [Cписок доступных средств для каждого клиента в сумме со всех его банков]
+AS 
+SELECT clientView.Фамилия,clientView.Имя,clientView.Отчество,
+SUM(clientView.[Сумма на аккаунте]) AS [Сумма на аккаунтах],SUM(clientView.[Доступная сумма]) AS [Доступная сумма]
+FROM [Cписок доступных средств для каждого клиента в банке] AS clientView
+GROUP BY clientView.Фамилия,clientView.Имя,clientView.Отчество
 
 GO
 
+SELECT * FROM [Cписок доступных средств для каждого клиента в банке]
+SELECT * FROM [Cписок доступных средств для каждого клиента в сумме со всех его банков]
+
+---------------------------------------------------------
+--------------------------------------------------------- Задание 8
+/*
+Написать процедуру которая будет переводить определённую сумму со счёта на карту этого
+аккаунта. При этом будем считать что деньги на счёту все равно останутся, просто сумма средств
+на карте увеличится. Например, у меня есть аккаунт на котором 1000 рублей и две карты по 300
+рублей на каждой. Я могу перевести 200 рублей на одну из карт, при этом баланс аккаунта
+останется 1000 рублей, а на картах будут суммы 300 и 500 рублей соответственно. После этого я
+уже не смогу перевести 400 рублей с аккаунта ни на одну из карт, так как останется всего 200
+свободных рублей (1000-300-500). Переводить БЕЗОПАСНО. То есть использовать транзакцию.
+*/
+
+GO
 CREATE PROCEDURE TransferMoneyFromAccountToCard
-	@ClientId INT,
-	@BankId INT,
+	@AccountId INT,
 	@Money MONEY,
 	@CardNumber VARCHAR(16)
 AS 
@@ -272,33 +410,22 @@ BEGIN
 RAISERROR('Поле @Money меньше либо равно 0',0,1)
 RETURN
 END
-IF @ClientId NOT IN(SELECT Id FROM Client) 
+IF @AccountId NOT IN(SELECT Id FROM Accounts) 
 BEGIN
-RAISERROR('Поле @StatusId не содержится в таблице Client',0,1)
+RAISERROR('Поле @AccountId не содержится в таблице Accounts',0,1)
 RETURN
 END
-IF @BankId NOT IN(SELECT Id FROM Bank) 
-BEGIN
-RAISERROR('Поле @BankId не содержится в таблице Bank',0,1)
-RETURN
-END
-IF (SELECT COUNT(*) FROM Account
-	WHERE Account.IdBank = @BankId AND Account.IdClient = @ClientId) = 0
-BEGIN
-RAISERROR('Поля @BankId и @StatusId не содержатся в таблице Account',0,1)
-RETURN
-END
-IF @CardNumber NOT IN(SELECT CardNumber FROM BankCard) 
+IF @CardNumber NOT IN(SELECT CardNumber FROM BankCards) 
 BEGIN
 RAISERROR('Поле @CardNumber не содержится в таблице BankCard',0,1)
 RETURN
 END
 
-IF (SELECT COUNT(*) FROM Account AS A
-	INNER JOIN BankCard AS BC ON BC.IdBank = A.IdBank AND BC.IdClient = A.IdClient
-	WHERE BC.IdClient = @ClientId AND BC.IdBank = @BankId AND BC.CardNumber = @CardNumber) <> 1
+IF (SELECT COUNT(*) FROM Accounts AS A
+	INNER JOIN BankCards AS BC ON A.Id = BC.AccountId
+	WHERE A.Id = @AccountId AND BC.CardNumber = @CardNumber) <> 1
 BEGIN
-RAISERROR('Поле @CardNumber не содержится на аккаунте с полями @BankId и @ClientId',0,1)
+RAISERROR('Поле @CardNumber не содержится на аккаунте @AccountId',0,1)
 RETURN
 END
 
@@ -306,7 +433,7 @@ DECLARE @MoneyCanTransfer MONEY
 
 SELECT @MoneyCanTransfer = List.[Сумма на аккаунте] - List.[Доступная сумма]
 FROM [Cписок доступных средств для каждого клиента в банке] AS List
-WHERE List.[Id Клиента] = @ClientId AND List.[Id Банка] = @BankId
+WHERE List.[Id Аккаунта] = @AccountId
 
 IF @MoneyCanTransfer < @Money
 BEGIN
@@ -318,8 +445,8 @@ END
 BEGIN TRY
 BEGIN TRANSACTION
 
-UPDATE BankCard SET Balance = Balance + @Money
-WHERE BankCard.CardNumber = @CardNumber
+UPDATE BankCards SET Balance = Balance + @Money
+WHERE BankCards.CardNumber = @CardNumber
 
 END TRY
 BEGIN CATCH
@@ -331,75 +458,24 @@ COMMIT TRANSACTION
 END
 GO
 
-INSERT INTO SocialStatus (StatusName)
-VALUES 
-('Пенсионер'),
-('Инвалид'),
-('Студент'),
-('Инностранец'),
-('Ветеран')
 
-INSERT INTO Client (LastName,FirstName,FatherName, SocialStatusId)
-VALUES
-('Степаненко','Виктория','Дмитриевна',1),
-('Якушенко','Николай','Викторович',2),
-('Петрушенко','Василилий','Григорьевич',3),
-('Григоренко','Елизовета','Николаевна',3),
-('Степаненко','Екатерина','Ивановна',4)
-
-INSERT INTO Bank (BankName)
-VALUES
-('Беларусбанк'),
-('Сбербанк'),
-('Альфа банк'),
-('Белинвестбанк'),
-('Белагропромбанк')
-
-INSERT INTO Account (IdClient,IdBank,Balance)VALUES (1,2,100.0)
-INSERT INTO BankCard (CardNumber,IdClient,IdBank,ValidThru,Balance) VALUES('3571379056321684',1,2,'01.05.2024',30.5)
-INSERT INTO Account (IdClient,IdBank,Balance)VALUES (2,4,50.0)
-INSERT INTO BankCard (CardNumber,IdClient,IdBank,ValidThru,Balance) VALUES('2846528656568174',2,4,'01.09.2025',15.0)
-INSERT INTO BankCard (CardNumber,IdClient,IdBank,ValidThru,Balance) VALUES('8158925677275355',2,4,'01.01.2026',35.0)
-INSERT INTO Account (IdClient,IdBank,Balance)VALUES (2,3,50.0)
-INSERT INTO BankCard (CardNumber,IdClient,IdBank,ValidThru,Balance) VALUES('6862866224365636',2,3,'01.06.2023',12.0)
-INSERT INTO Account (IdClient,IdBank,Balance)VALUES (3,1,20.0)
-INSERT INTO Account (IdClient,IdBank,Balance)VALUES (4,5,120.5)
-INSERT INTO Account (IdClient,IdBank,Balance)VALUES (5,1,45.5)
-INSERT INTO BankCard (CardNumber,IdClient,IdBank,ValidThru,Balance) VALUES('9357935382345254',5,1,'01.02.2025',20.0)
-INSERT INTO BankCard (CardNumber,IdClient,IdBank,ValidThru,Balance) VALUES('2776864688675633',5,1,'01.08.2026',25.5)
-
-INSERT INTO City (CityName)
-VALUES
-('Новополоцк'),
-('Минск'),
-('Молодечно'),
-('Брест'),
-('Витебск')
-
-INSERT INTO Subsidiary(IdBank,IdCity,Street,BuildingNumber)
-VALUES
-(1,1,'Молодежная',242),
-(1,1,'Строительная',53),
-(2,3,'Комсомольская',22),
-(3,2,'Пионерская',13),
-(4,5,'Ленина',56),
-(5,4,'Комсомольская',7)
-
-GO
-
-SELECT *
-FROM Account
-
-EXEC GiveMoneyBySocialStatus 3,10
-
-SELECT *
-FROM Account
+SELECT * FROM BankCards
+EXEC TransferMoneyFromAccountToCard 1,50,'3571379056321684'
+SELECT * FROM BankCards
 
 
-SELECT *
-FROM BankCard
+SELECT * FROM BankCards
+EXEC TransferMoneyFromAccountToCard 1,0,'3571379056321684'
+SELECT * FROM BankCards
+EXEC TransferMoneyFromAccountToCard 99999,10,'3571379056321684'
+SELECT * FROM BankCards
+EXEC TransferMoneyFromAccountToCard 1,10,'1111111111111111'
+SELECT * FROM BankCards
+EXEC TransferMoneyFromAccountToCard 1,10,'6862866224365636'
+SELECT * FROM BankCards
+EXEC TransferMoneyFromAccountToCard 1,999999,'3571379056321684'
+SELECT * FROM BankCards
 
-EXEC TransferMoneyFromAccountToCard 1,2,50,'3571379056321684'
 
-SELECT *
-FROM BankCard
+
+---------------------------------------------------------
