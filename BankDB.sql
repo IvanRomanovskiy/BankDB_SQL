@@ -42,7 +42,7 @@ CREATE TABLE Accounts
 	Id INT IDENTITY(1,1) UNIQUE NOT NULL,
 	ClientId INT NOT NULL,
 	BankId INT NOT NULL,
-	Balance MONEY NOT NULL,
+	Balance MONEY NOT NULL CHECK (Balance >= 0),
 
 	CONSTRAINT FK_Accounts_ClientId FOREIGN KEY (ClientId) REFERENCES Clients (Id),
 	CONSTRAINT FK_Accounts_BankId FOREIGN KEY (BankId) REFERENCES Banks (Id),
@@ -52,10 +52,10 @@ CREATE TABLE Accounts
 CREATE TABLE BankCards
 (
 	Id INT IDENTITY(1,1) UNIQUE NOT NULL,
-    CardNumber CHAR(16) NOT NULL,
+    CardNumber CHAR(16) UNIQUE NOT NULL,
 	AccountId INT NOT NULL,
-	ValidThru DATE NOT NULL,
-	Balance MONEY NOT NULL,
+	ValidThru DATE NOT NULL CHECK (ValidThru > GETDATE()),
+	Balance MONEY NOT NULL CHECK (Balance >= 0),
 
 	CONSTRAINT CardNumber_NumbersCheck CHECK (CardNumber NOT LIKE '%[^0-9]%'),
 	CONSTRAINT FK_BankCards_AccountId FOREIGN KEY (AccountId) REFERENCES Accounts (Id),
@@ -101,19 +101,24 @@ AS
 BEGIN
 	
 	IF 
-	(SELECT COUNT(*) 
-	 FROM 
-	 	 (SELECT ISNULL(SUM(ISNULL(INSERTED.Balance,0.0)),0.0) AS Sums FROM Accounts
-		 INNER JOIN INSERTED ON INSERTED.Id = Accounts.Id) AS T1,
-		 (SELECT Accounts.Balance FROM Accounts
-		 INNER JOIN INSERTED ON INSERTED.Id = Accounts.Id
-		 WHERE INSERTED.Id = Accounts.Id) AS T2
-		 WHERE T1.Sums < T2.Balance
+	(
+		SELECT COUNT(*) 
+		FROM 
+		(
+			SELECT inserted.Id,ISNULL(SUM(ISNULL(BankCards.Balance,0.0)),0.0) AS Sums
+			FROM BankCards
+				RIGHT JOIN INSERTED ON INSERTED.Id = BankCards.AccountId
+			GROUP BY INSERTED.Id
+		) AS T1,
+		(
+			SELECT INSERTED.Balance FROM INSERTED
+		) AS T2
+		WHERE T1.Sums > T2.Balance
 	) > 0
 	BEGIN
-	ROLLBACK TRANSACTION
-	RAISERROR('На аккаунте баланс меньше, чем на всех картах в сумме',0,1)
-	RETURN 
+		ROLLBACK TRANSACTION
+		RAISERROR('На аккаунте баланс меньше, чем на всех картах в сумме',0,1)
+		RETURN 
 	END
 	
 END
@@ -128,21 +133,25 @@ AS
 BEGIN
 SET nocount ON
 
-		IF  
-		(SELECT COUNT(*) 
-		 FROM 
-		 (SELECT ISNULL(SUM(ISNULL(INSERTED.Balance,0.0)),0.0) AS Sums FROM Accounts
-		 INNER JOIN INSERTED ON INSERTED.AccountId = Accounts.Id) AS T1,
-		 (SELECT Accounts.Balance FROM Accounts
-		 INNER JOIN INSERTED ON INSERTED.AccountId = Accounts.Id
-		 WHERE INSERTED.AccountId = Accounts.Id) AS T2
-		 WHERE T1.Sums > T2.Balance 
-		) > 0
-		BEGIN
+	IF  
+	(
+		SELECT COUNT(*) 
+		FROM 
+		(
+			SELECT ISNULL(SUM(ISNULL(INSERTED.Balance,0.0)),0.0) AS Sums FROM Accounts
+				JOIN INSERTED ON INSERTED.AccountId = Accounts.Id) AS T1,
+				(
+					SELECT Accounts.Balance FROM Accounts
+						JOIN INSERTED ON INSERTED.AccountId = Accounts.Id
+					WHERE INSERTED.AccountId = Accounts.Id
+				) AS T2
+			WHERE T1.Sums > T2.Balance 
+	) > 0
+	BEGIN
 		ROLLBACK TRANSACTION
 		RAISERROR('Сумма баланса на картах больше, чем баланс на аккаунте',0,1)
 		RETURN 
-		END
+	END
 
 END
 
@@ -213,17 +222,26 @@ VALUES
 
 
 ---------------------------------------------------------
+--------------------------------------------------------- ПРОВЕРКА ТРИГГЕРОВ
+
+INSERT INTO BankCards (CardNumber,AccountId,ValidThru,Balance) VALUES ('3121379056321684',1,'01.05.2024',999999)
+GO
+UPDATE Accounts SET Balance = 0 WHERE Accounts.Id = 3
+
+---------------------------------------------------------
 --------------------------------------------------------- Задание 2
 /*
 Покажи мне список банков у которых есть филиалы в городе X (выбери один из городов)
 */
 GO
 CREATE VIEW [Cписок банков с филиалами в Новополоцке]
-AS SELECT BankName, Subsidiaries.Street, Subsidiaries.BuildingNumber
+AS 
+SELECT BankName
 FROM Banks
-INNER JOIN Subsidiaries ON Banks.Id = Subsidiaries.BankId
-INNER JOIN Cities ON Subsidiaries.CityId = Cities.Id
+	JOIN Subsidiaries ON Banks.Id = Subsidiaries.BankId
+	JOIN Cities ON Subsidiaries.CityId = Cities.Id
 WHERE CityName LIKE ('Новополоцк')
+GROUP BY BankName
 GO
 
 SELECT * FROM [Cписок банков с филиалами в Новополоцке]
@@ -235,11 +253,12 @@ SELECT * FROM [Cписок банков с филиалами в Новопол�
 */
 GO
 CREATE VIEW [Список карточек]
-AS SELECT C.LastName AS Фамилия,C.FirstName AS Имя,C.FatherName AS Отчество,BC.Balance AS Баланс,B.BankName AS [Название банка]
+AS 
+SELECT C.LastName AS Фамилия,C.FirstName AS Имя,C.FatherName AS Отчество,BC.Balance AS Баланс,B.BankName AS [Название банка]
 FROM BankCards AS BC
-INNER JOIN Accounts AS A ON A.Id = BC.AccountId
-INNER JOIN Banks AS B ON B.Id = A.BankId
-INNER JOIN Clients AS C ON C.Id = A.ClientId
+	JOIN Accounts AS A ON A.Id = BC.AccountId
+	JOIN Banks AS B ON B.Id = A.BankId
+	JOIN Clients AS C ON C.Id = A.ClientId
 GO
 
 SELECT * FROM [Список карточек]
@@ -256,16 +275,17 @@ CREATE VIEW [Список банковских аккаунтов у котор�
 AS SELECT C.LastName AS Фамилия,C.FirstName AS Имя,C.FatherName AS Отчество,B.BankName AS [Название банка], Разница
 FROM 
 (
-SELECT A.ClientId,A.BankId,A.Balance - SUM(BC.Balance) AS Разница
-FROM BankCards AS BC
-INNER JOIN Accounts AS A ON A.Id = BC.AccountId
-INNER JOIN Banks AS B ON B.Id = A.BankId
-INNER JOIN Clients AS C ON C.Id = A.ClientId
-GROUP BY A.ClientId,A.BankId,A.Balance
-HAVING A.Balance - SUM(BC.Balance) <> 0
+	SELECT A.ClientId,A.BankId,A.Balance - ISNULL(SUM(BC.Balance),0.0) AS Разница
+	FROM BankCards AS BC
+		RIGHT JOIN Accounts AS A ON A.Id = BC.AccountId
+		JOIN Banks AS B ON B.Id = A.BankId
+		JOIN Clients AS C ON C.Id = A.ClientId
+	GROUP BY A.ClientId,A.BankId,A.Balance
+	HAVING A.Balance - ISNULL(SUM(BC.Balance),0.0) <> 0
 ) AS T
-INNER JOIN Banks AS B ON B.Id = T.BankId
-INNER JOIN Clients AS C ON C.Id = T.ClientId
+	JOIN Banks AS B ON B.Id = T.BankId
+	JOIN Clients AS C ON C.Id = T.ClientId
+
 GO
 
 SELECT * FROM [Список банковских аккаунтов у которых баланс не совпадает с суммой баланса по карточкам]
@@ -277,22 +297,28 @@ SELECT * FROM [Список банковских аккаунтов у кото�
 подзапросом)
 */
 GO
+
 CREATE VIEW [Количество банковских карточек для каждого социального статуса (GROUP BY)]
-AS SELECT SS.StatusName AS [Социальный статус], ISNULL(COUNT(BC.CardNumber),0) AS [Количество карт]
+AS 
+SELECT SS.StatusName AS [Социальный статус], ISNULL(COUNT(BC.CardNumber),0) AS [Количество карт]
 FROM BankCards AS BC
-RIGHT JOIN Accounts AS A ON A.Id = BC.AccountId
-LEFT JOIN Clients AS C ON C.Id = A.ClientId
-RIGHT JOIN SocialStatuses AS SS ON SS.Id = C.SocialStatusId
+	RIGHT JOIN Accounts AS A ON A.Id = BC.AccountId
+	LEFT JOIN Clients AS C ON C.Id = A.ClientId
+	RIGHT JOIN SocialStatuses AS SS ON SS.Id = C.SocialStatusId
 GROUP BY SS.StatusName
+
 GO
+
 CREATE VIEW [Количество банковских карточек для каждого социального статуса (подзапрос)]
-AS SELECT SS.Id,SS.StatusName AS [Социальный статус], 
-(SELECT COUNT(*)
-FROM BankCards AS BC
-INNER JOIN Accounts AS A ON A.Id = BC.AccountId
-INNER JOIN Clients AS C ON C.Id = A.ClientId
-WHERE SS.Id = C.SocialStatusId
-) AS [Количество карт]
+AS 
+SELECT SS.Id,SS.StatusName AS [Социальный статус], 
+	(
+		SELECT COUNT(*)
+		FROM BankCards AS BC
+			JOIN Accounts AS A ON A.Id = BC.AccountId
+			JOIN Clients AS C ON C.Id = A.ClientId
+		WHERE SS.Id = C.SocialStatusId
+	) AS [Количество карт]
 FROM SocialStatuses AS SS
 
 GO
@@ -318,23 +344,25 @@ SET XACT_ABORT, NOCOUNT ON
 
 IF @StatusId NOT IN(SELECT Id FROM SocialStatuses) 
 BEGIN
-RAISERROR('Поле @StatusId не содержится в таблице SocialStatuses',1,1)
-RETURN
+	RAISERROR('Поле @StatusId не содержится в таблице SocialStatuses',1,1)
+	RETURN
 END
-IF (SELECT COUNT(*) FROM Accounts
-INNER JOIN Clients ON Clients.Id = Accounts.ClientId
-WHERE Clients.SocialStatusId = @StatusId) = 0
+IF (
+	SELECT COUNT(*) 
+	FROM Accounts
+		JOIN Clients ON Clients.Id = Accounts.ClientId
+	WHERE Clients.SocialStatusId = @StatusId
+	) = 0
 BEGIN
-RAISERROR('У поля @StatusId нет привязанный аккаунтов',0,1)
-RETURN
+	RAISERROR('У поля @StatusId нет привязанный аккаунтов',0,1)
+	RETURN
 END
 
 UPDATE Accounts
 SET Balance = Balance + 10
 FROM Accounts AS A
-INNER JOIN Clients AS C ON C.Id = A.ClientId
-INNER JOIN SocialStatuses AS SS ON SS.Id = C.SocialStatusId
-WHERE SS.Id = @StatusId
+	JOIN Clients AS C ON C.Id = A.ClientId
+WHERE C.SocialStatusId = @StatusId
 END
 GO
 
@@ -358,24 +386,24 @@ SELECT * FROM Accounts
 */
 GO
 CREATE VIEW [Cписок доступных средств для каждого клиента в банке]
-AS SELECT A.Id AS [Id Аккаунта],C.LastName AS Фамилия,C.FirstName AS Имя,C.FatherName AS Отчество,B.BankName AS [Название банка],AccountBalance AS [Сумма на аккаунте] ,[Доступная сумма]
+AS 
+SELECT A.Id AS [Id Аккаунта],C.LastName AS Фамилия,C.FirstName AS Имя,C.FatherName AS Отчество,B.BankName AS [Название банка],AccountBalance AS [Сумма на аккаунте] ,AccountBalance - [Cумма на картах] AS [Доступная сумма]
 FROM 
 (
-SELECT A.ClientId,A.BankId, SUM(A.Balance) / COUNT(A.BankId) AS AccountBalance,ISNULL(SUM(ISNULL(BC.Balance,0)),0) AS [Доступная сумма]
-FROM Clients AS C
-INNER JOIN Accounts AS A ON A.ClientId = C.Id
-INNER JOIN Banks AS B ON B.Id = A.BankId
-LEFT JOIN BankCards AS BC ON A.Id = BC.AccountId
-GROUP BY A.BankId,A.ClientId
+	SELECT A.ClientId,A.BankId, SUM(A.Balance) / COUNT(A.BankId) AS AccountBalance,ISNULL(SUM(ISNULL(BC.Balance,0)),0) AS [Cумма на картах]
+	FROM Clients AS C
+		JOIN Accounts AS A ON A.ClientId = C.Id
+		JOIN Banks AS B ON B.Id = A.BankId
+		LEFT JOIN BankCards AS BC ON A.Id = BC.AccountId
+	GROUP BY A.BankId,A.ClientId
 ) AS T
-INNER JOIN Accounts AS A ON A.ClientId = T.ClientId AND A.BankId = T.BankId
-INNER JOIN Banks AS B ON B.Id = T.BankId
-INNER JOIN Clients AS C ON C.Id = T.ClientId
+	JOIN Accounts AS A ON A.ClientId = T.ClientId AND A.BankId = T.BankId
+	JOIN Banks AS B ON B.Id = T.BankId
+	JOIN Clients AS C ON C.Id = T.ClientId
 GO
 CREATE VIEW [Cписок доступных средств для каждого клиента в сумме со всех его банков]
 AS 
-SELECT clientView.Фамилия,clientView.Имя,clientView.Отчество,
-SUM(clientView.[Сумма на аккаунте]) AS [Сумма на аккаунтах],SUM(clientView.[Доступная сумма]) AS [Доступная сумма]
+SELECT clientView.Фамилия,clientView.Имя,clientView.Отчество,SUM(clientView.[Сумма на аккаунте]) AS [Сумма на аккаунтах],SUM(clientView.[Доступная сумма]) AS [Доступная сумма]
 FROM [Cписок доступных средств для каждого клиента в банке] AS clientView
 GROUP BY clientView.Фамилия,clientView.Имя,clientView.Отчество
 
@@ -398,7 +426,6 @@ SELECT * FROM [Cписок доступных средств для каждог
 
 GO
 CREATE PROCEDURE TransferMoneyFromAccountToCard
-	@AccountId INT,
 	@Money MONEY,
 	@CardNumber VARCHAR(16)
 AS 
@@ -407,51 +434,47 @@ SET XACT_ABORT, NOCOUNT ON
 
 IF @Money <= 0
 BEGIN
-RAISERROR('Поле @Money меньше либо равно 0',0,1)
-RETURN
-END
-IF @AccountId NOT IN(SELECT Id FROM Accounts) 
-BEGIN
-RAISERROR('Поле @AccountId не содержится в таблице Accounts',0,1)
-RETURN
-END
-IF @CardNumber NOT IN(SELECT CardNumber FROM BankCards) 
-BEGIN
-RAISERROR('Поле @CardNumber не содержится в таблице BankCard',0,1)
-RETURN
+	RAISERROR('Поле @Money меньше либо равно 0',0,1)
+	RETURN
 END
 
-IF (SELECT COUNT(*) FROM Accounts AS A
-	INNER JOIN BankCards AS BC ON A.Id = BC.AccountId
-	WHERE A.Id = @AccountId AND BC.CardNumber = @CardNumber) <> 1
+IF @CardNumber NOT IN(SELECT CardNumber FROM BankCards) 
 BEGIN
-RAISERROR('Поле @CardNumber не содержится на аккаунте @AccountId',0,1)
-RETURN
+	RAISERROR('Поле @CardNumber не содержится в таблице BankCard',0,1)
+	RETURN
 END
+
+DECLARE @AccountId INT
+
+SET @AccountId = 
+(
+	SELECT A.Id 
+	FROM Accounts AS A
+		JOIN BankCards AS BC ON BC.AccountId = A.Id
+	WHERE BC.CardNumber = @CardNumber
+)
 
 DECLARE @MoneyCanTransfer MONEY
 
-SELECT @MoneyCanTransfer = List.[Сумма на аккаунте] - List.[Доступная сумма]
+SELECT @MoneyCanTransfer = List.[Доступная сумма]
 FROM [Cписок доступных средств для каждого клиента в банке] AS List
 WHERE List.[Id Аккаунта] = @AccountId
 
 IF @MoneyCanTransfer < @Money
 BEGIN
-RAISERROR('Поле @Money больше возможной пересылки средств',0,1)
-RETURN
+	RAISERROR('Поле @Money больше возможной пересылки средств',0,1)
+	RETURN
 END
 
 
 BEGIN TRY
 BEGIN TRANSACTION
-
-UPDATE BankCards SET Balance = Balance + @Money
-WHERE BankCards.CardNumber = @CardNumber
-
+	UPDATE BankCards SET Balance = Balance + @Money
+	WHERE BankCards.CardNumber = @CardNumber
 END TRY
 BEGIN CATCH
-ROLLBACK TRANSACTION
-RETURN
+	ROLLBACK TRANSACTION
+	RETURN
 END CATCH
 COMMIT TRANSACTION
 
@@ -460,20 +483,16 @@ GO
 
 
 SELECT * FROM BankCards
-EXEC TransferMoneyFromAccountToCard 1,50,'3571379056321684'
+EXEC TransferMoneyFromAccountToCard 50,'3571379056321684'
 SELECT * FROM BankCards
 
 
 SELECT * FROM BankCards
-EXEC TransferMoneyFromAccountToCard 1,0,'3571379056321684'
+EXEC TransferMoneyFromAccountToCard 0,'3571379056321684'
 SELECT * FROM BankCards
-EXEC TransferMoneyFromAccountToCard 99999,10,'3571379056321684'
+EXEC TransferMoneyFromAccountToCard 10,'1111111111111111'
 SELECT * FROM BankCards
-EXEC TransferMoneyFromAccountToCard 1,10,'1111111111111111'
-SELECT * FROM BankCards
-EXEC TransferMoneyFromAccountToCard 1,10,'6862866224365636'
-SELECT * FROM BankCards
-EXEC TransferMoneyFromAccountToCard 1,999999,'3571379056321684'
+EXEC TransferMoneyFromAccountToCard 999999,'3571379056321684'
 SELECT * FROM BankCards
 
 
